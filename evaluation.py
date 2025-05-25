@@ -14,6 +14,7 @@ from typing import Callable
 import argparse
 import evaluate
 import util
+from evaluate import load
 
 
 def get_macro_f1_metric() -> Callable[[], float]:
@@ -32,8 +33,13 @@ def get_macro_f1_metric() -> Callable[[], float]:
         0.43333333333333335
     """
 
-    """YOUR CODE HERE"""
-    util.raiseNotDefined()
+    # 加载 macro F1 metric
+    metric = evaluate.load("f1")
+    def func(preds, golds):
+        # average="macro" 计算宏平均F1分数
+        result = metric.compute(predictions=preds, references=golds, average="macro")
+        return result["f1"]
+    return func
 
 
 def main():

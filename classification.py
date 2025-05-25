@@ -37,9 +37,28 @@ def get_topic_classification_pipeline() -> Callable[[str], dict]:
         >>> result = func("Would the US constitution be changed if the admendment received 2/3 of the popular vote?")
         {"label": "Politics & Government", "score": 0.9999999403953552}
     """
-    pipe = pipeline(model="cointegrated/rubert-tiny-sentiment-balanced")
+    # 使用指定的模型 'casonshep/text_classification_yahoo'.
+    # 该模型基于 Yahoo Answers 数据集训练，其10个类别与题目要求的10个主题一致。
+    # 为确保获取单个最可能的分类结果，明确设置 task 和 top_k=1。
+    pipe = pipeline(task="text-classification", model="casonshep/text_classification_yahoo", top_k=1)
+    
     def func(text: str) -> dict:
-        return pipe(text)[0]
+        output_from_pipeline = pipe(text)
+        
+        # 检查 pipeline 输出是否为 [[{...}]] 结构
+        if (isinstance(output_from_pipeline, list) and len(output_from_pipeline) == 1 and
+            isinstance(output_from_pipeline[0], list) and len(output_from_pipeline[0]) == 1 and
+            isinstance(output_from_pipeline[0][0], dict)):
+            return output_from_pipeline[0][0]  # 从 [[{...}]] 中提取字典
+        # 检查 pipeline 输出是否为 [{...}] 结构
+        elif (isinstance(output_from_pipeline, list) and len(output_from_pipeline) == 1 and
+              isinstance(output_from_pipeline[0], dict)):
+            return output_from_pipeline[0]  # 从 [{...}] 中提取字典
+        else:
+            # 处理意外的输出结构
+            # 对于调试，可以打印出实际的输出结构：
+            # print(f"Unexpected output structure: {output_from_pipeline}")
+            return {"label": "Error: Unexpected output structure from pipeline", "score": 0.0}
     return func
 
 

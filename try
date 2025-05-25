@@ -1,3 +1,0 @@
-import gradio as gr
-iface = gr.Interface.from_pipeline(pipe)
-iface.launch()
