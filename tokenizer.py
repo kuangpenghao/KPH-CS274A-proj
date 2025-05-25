@@ -55,32 +55,105 @@ def clean_vocab(vocab: Dict[str, int], merges: List[Tuple[str, str]]):
             A list of pairs of tokens (:obj:`Tuple[str, str]`), e.g. `[("a", "b"),...]`
     """
 
-    # Step 1: 清理词汇表，保留仅包含单个数字或特殊前缀+单个数字的 token
-    def has_multiple_digits(token):
-        """判断 token 中是否包含多个数字字符"""
-        return sum(c.isdigit() for c in token) >= 2
+    # Step 1: 清理词汇表
+    # 规则:
+    # 1. 删除作为“纯数字”且长度大于1的词元。
+    # 2. 删除形式为 "连续任意位数非数字" + "连续大于1位的纯数字" 的词元。
+    def should_remove_from_vocab(token_str: str) -> bool:
+        if not token_str:
+            return False
 
-    # 构建新的词汇表
-    new_vocab = {}
-    idx=0
-    for token, _ in vocab.items():
-        if not has_multiple_digits(token):
-            new_vocab[token] = idx
-            idx+=1
+        # 规则 1: 纯数字且长度大于1
+        if token_str.isdigit():
+            return len(token_str) > 1
 
-    # 替换原始词汇表
+        # 规则 2: "连续任意位数非数字" + "连续大于1位的纯数字"
+        # Find the start of the trailing pure digit segment
+        idx = len(token_str)
+        while idx > 0 and token_str[idx-1].isdigit():
+            idx -= 1
+        
+        prefix = token_str[0:idx]
+        suffix = token_str[idx:]
+
+        if not suffix: # No trailing digits, or token is all non-digits
+            return False
+
+        # suffix is guaranteed to be all digits here, and non-empty.
+        # prefix might be empty if original token_str was all digits (handled by rule 1).
+        
+        if len(suffix) > 1: # "连续大于1位的纯数字"
+            if bool(prefix): # Prefix must be non-empty
+                # Check if prefix is "连续任意位数非数字"
+                is_prefix_all_nondigits = all(not c.isdigit() for c in prefix)
+                if is_prefix_all_nondigits:
+                    return True
+        return False
+
+    current_vocab_keys = list(vocab.keys()) # 保持顺序
+    keys_to_keep_in_vocab = []
+    for token_k in current_vocab_keys:
+        if not should_remove_from_vocab(token_k):
+            keys_to_keep_in_vocab.append(token_k)
+
+    final_vocab = {}
+    new_idx = 0
+    for token_k in keys_to_keep_in_vocab:
+        final_vocab[token_k] = new_idx
+        new_idx += 1
+    
     vocab.clear()
-    vocab.update(new_vocab)
+    vocab.update(final_vocab)
 
-    # Step 2: 清理合并规则，移除可能导致多个数字合并的规则
-    cleaned_merges = []
-    for a, b in merges:
-        merged_token = a + b
-        if not has_multiple_digits(merged_token):
-            cleaned_merges.append((a, b))
+    # Step 2: 清理合并规则
+    # 规则:
+    # 1. 删除 "纯数字" + "纯数字" 的合并。
+    # 2. 删除 ("连续任意位数非数字"+"纯数字") + "纯数字" 的合并。
+    new_cleaned_merges = []
+    for p1, p2 in merges:
+        merged_token = p1 + p2
 
-    # 替换原始合并规则
-    merges[:] = cleaned_merges
+        if not (p1 in vocab and p2 in vocab and merged_token in vocab):
+            continue
+
+        def is_pure_digit(token: str) -> bool:
+            return bool(token) and token.isdigit()
+
+        def is_prefix_nondigit_suffix_puredigit(token: str) -> bool:
+            if not token or token.isdigit(): # Must not be empty or pure digit
+                return False
+            
+            idx = len(token)
+            while idx > 0 and token[idx-1].isdigit():
+                idx -= 1
+            
+            prefix = token[0:idx]
+            suffix = token[idx:]
+
+            if not prefix or not suffix: # Must have both parts
+                return False
+            
+            return all(not c.isdigit() for c in prefix) # Prefix all non-digits, suffix is all digits (guaranteed by loop)
+
+        p1_is_pure = is_pure_digit(p1)
+        p2_is_pure = is_pure_digit(p2)
+        p1_is_nondigit_plus_digit = is_prefix_nondigit_suffix_puredigit(p1)
+
+        delete_this_merge = False
+
+        # 规则 1: "纯数字" + "纯数字"
+        if p1_is_pure and p2_is_pure:
+            delete_this_merge = True
+        
+        # 规则 2: ("连续任意位数非数字"+"纯数字") + "纯数字"
+        if not delete_this_merge:
+            if p1_is_nondigit_plus_digit and p2_is_pure:
+                delete_this_merge = True
+        
+        if not delete_this_merge:
+            new_cleaned_merges.append((p1, p2))
+
+    merges[:] = new_cleaned_merges
 
 
 if __name__ == '__main__':
